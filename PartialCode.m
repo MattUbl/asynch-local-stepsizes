@@ -1,6 +1,6 @@
 clear all
 close all 
-rng(2); % Results in paper were done using rng(1)
+rng(1); % Results in paper were done using rng(3)
 
 %%% Generate quadratic function
 n = 20; %matrix size
@@ -27,22 +27,30 @@ Q = u*s*v';
 Q = 100*Q/(norm(Q));
 
 
-iter = 500; %Simulation runtime
+iter = 1000; %Simulation runtime
 r = Q*100*ones(n,1); %Generate r such that the stationary point of the quadratic function is not x = 0
-b = 20; %Maximum communication delay between agents
-B = randi([0 b],n,n); %Communication delays between agents
-B = B - diag(diag(B)); %Communication delay to self is 0
-L = abs(Q).*(ones(20)+B+B'); %each entry is L^i_j(1 + D^i_j + D^j_i)
+b = 10; %Maximum communication delay between agents
+Bc = randi([0 b],n,n); %Communication delays between agents (infrequent communication)
+Bc = Bc - diag(diag(Bc)); %Communication delay to self is 0
+Bd = randi([0 b],n,n); %Communication delays between agents (infrequent communication)
+Bd = Bd - diag(diag(Bd)); %Communication delay to self is 0
+L = abs(Q).*(ones(20)+Bc+Bd'); %each entry is L^i_j(1 + D^i_j + D^j_i)
 T = ones(20); %Will track \tau^j_i(t)
+D = randi([0 4],n);
+Dt = ones(20,1);
 
 Xs = zeros(n); %State of global stepsize case
+Ms = zeros(n,n,b+1);
 Xp = zeros(n); %State of locally chosen stepsize case
+Mp = zeros(n,n,b+1);
 
 Gp = (1.9)./sum(L,2); %locally chosen stepsizes
 Gs = (1.9)/(norm(Q)*(1+sqrt(n)*20)); % global stepsize
 
 for k = 1:iter
+    Up = k*ones(20,1)-D-Dt;
     for i = 1:n
+        if Up(i) == 0
             Xp(i,i) = Xp(i,i)-Gp(i)*(Q(i,:)*Xp(:,i)+r(i)); %Locally chosen stepsize update, projected onto X
             if Xp(i,i) > 10000
                 Xp(i,i) = 10000;
@@ -55,14 +63,17 @@ for k = 1:iter
             elseif Xs(i,i) < -10000
                 Xs(i,i) = -10000;
             end
+            Dt(i) = k+1+randi([0 D(i)]);
+        end
     end
-    Com = k*ones(20)-B-T; %A counter for each pair of agents. When Com(i,j) = 0, agent j communicates with agent i. Then T(i,j) is updates such that 0 >= Com(i,j) >= -B(i,j)
+    Com = k*ones(20)-Bc-T; %A counter for each pair of agents. When Com(i,j) = 0, agent j communicates with agent i. Then T(i,j) is updates such that 0 >= Com(i,j) >= -B(i,j)
     for i = 1:n
         for j = 1:n
             if Com(i,j) == 0 %Probability agent j sends its state to agent i
-                Xp(j,i) = Xp(j,j); %Agent j shares with agent i
-                Xs(j,i) = Xs(j,j);
-                T(i,j) = k+1+randi([0 B(i,j)]);
+                g = randi([0 Bd(i,j)]);
+                Mp(j,i,g+1) = Xp(j,j); %Agent j shares with agent i
+                Ms(j,i,g+1) = Xs(j,j);
+                T(i,j) = k+1+randi([0 Bc(i,j)]);
             end
         end
     end
@@ -70,6 +81,22 @@ for k = 1:iter
         Rs = diag(Xs);
     ep(k) = 0.5*Rp'*Q*Rp+r'*Rp; %Normalized system error, distance to Sol divided by norm of Sol
     es(k) = 0.5*Rs'*Q*Rs+r'*Rs;
+    for l = 1:b
+        Mp(:,:,b) = Mp(:,:,b+1);
+        Mp(:,:,b+1) = zeros(n);
+        Ms(:,:,b) = Ms(:,:,b+1);
+        Ms(:,:,b+1) = zeros(n);
+        for i = 1:n
+            for j = 1:b
+                if Ms(i,j,1) ~= 0
+                    Xs(i,j) = Ms(i,j,1);
+                end
+                if Mp(i,j,1) ~= 0
+                    Xp(i,j) = Mp(i,j,1);
+                end
+            end
+        end
+    end
 end
 
 figure(1)
